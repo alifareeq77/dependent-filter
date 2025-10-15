@@ -21,8 +21,7 @@
 <script>
     import { ref, computed, watchEffect, onMounted, nextTick } from 'vue'
     import { useStore } from 'vuex'
-    import { useDebouncedRef } from 'vue-composables'
-    import { filter, every, intersection, castArray } from 'lodash'
+    import { filter as lodashFilter, every, intersection, castArray } from 'lodash'
 
     export default {
         props: {
@@ -46,8 +45,8 @@
                 return store.getters[`${props.resourceName}/getFilter`](props.filterKey)
             }
 
-            const filter = computed(() => getFilter())
-            const value = computed(() => filter.value.currentValue)
+            const currentFilter = computed(() => getFilter())
+            const value = computed(() => currentFilter.value.currentValue)
 
             const optionValue = (option) => {
                 return option.label || option.name || option.value
@@ -63,7 +62,7 @@
             }
 
             const availableOptions = computed(() => {
-                return filter(options.value, option => {
+                return lodashFilter(options.value, option => {
                     return !option.hasOwnProperty('depends') || every(option.depends, (values, filterName) => {
                         const filterObj = store.getters[`${props.resourceName}/getFilter`](filterName)
                         if (!filterObj) return true
@@ -103,7 +102,7 @@
 
             // React to changes in dependent filters
             watchEffect(() => {
-                const dependentFilters = filter.value.dependentOf.reduce((r, filterName) => {
+                const dependentFilters = currentFilter.value.dependentOf.reduce((r, filterName) => {
                     const f = store.getters[`${props.resourceName}/getFilter`](filterName)
                     r[filterName] = f ? f.currentValue : ''
                     return r
@@ -114,13 +113,13 @@
             })
 
             onMounted(() => {
-                options.value = filter.value.options
+                options.value = currentFilter.value.options
             })
 
             return {
                 options,
                 loading,
-                filter,
+                filter: currentFilter,
                 value,
                 handleChange,
                 optionValue,
