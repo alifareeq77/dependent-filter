@@ -19,7 +19,7 @@
 </template>
 
 <script>
-    import { ref, computed, watchEffect, onMounted, nextTick } from 'vue'
+    import { ref, computed, watch, watchEffect, onMounted, nextTick } from 'vue'
     import { useStore } from 'vuex'
     import { filter as lodashFilter, every, intersection, castArray } from 'lodash'
 
@@ -100,17 +100,23 @@
                 }
             }
 
-            // React to changes in dependent filters
-            watchEffect(() => {
-                const dependentFilters = currentFilter.value.dependentOf.reduce((r, filterName) => {
-                    const f = store.getters[`${props.resourceName}/getFilter`](filterName)
-                    r[filterName] = f ? f.currentValue : ''
-                    return r
-                }, {})
+            // React to changes in dependent filters' values
+            watch(
+                () => currentFilter.value.dependentOf.map((name) => {
+                    const f = store.getters[`${props.resourceName}/getFilter`](name)
+                    return f ? f.currentValue : ''
+                }),
+                (values) => {
+                    const dependentFilters = currentFilter.value.dependentOf.reduce((r, name, idx) => {
+                        r[name] = values[idx]
+                        return r
+                    }, {})
 
-                loading.value = true
-                fetchOptions(dependentFilters)
-            })
+                    loading.value = true
+                    fetchOptions(dependentFilters)
+                },
+                { immediate: true }
+            )
 
             onMounted(() => {
                 options.value = currentFilter.value.options
