@@ -19,6 +19,11 @@
 </template>
 
 <script>
+    import { ref, computed, watchEffect, onMounted } from 'vue'
+    import { useStore } from 'vuex'
+    import { useDebouncedRef } from 'vue-composables'
+    import { filter, every, intersection, castArray } from 'lodash'
+
     export default {
         props: {
             resourceName: {
@@ -32,76 +37,92 @@
             },
         },
 
-        data: () => ({
-            options: [],
-            loading: false,
-        }),
+        setup(props, { emit }) {
+            const store = useStore()
+            const options = ref([])
+            const loading = ref(false)
 
-        created() {
-            this.options = this.filter.options
+            const getFilter = () => {
+                return store.getters[`${props.resourceName}/getFilter`](props.filterKey)
+            }
 
-            this.$watch(() => {
-                this.loading = true;
-                this.fetchOptions(this.filter.dependentOf.reduce((r, filter) => {
-                    r[filter] = this.$store.getters[`${this.resourceName}/getFilter`](filter).currentValue;
-                    return r;
-                }, {}));
-            });
-        },
+            const filter = computed(() => getFilter())
+            const value = computed(() => filter.value.currentValue)
 
-        methods: {
-            handleChange(value) {
-                this.$store.commit(`${this.resourceName}/updateFilterState`, {
-                    filterClass: this.filterKey,
+            const optionValue = (option) => {
+                return option.label || option.name || option.value
+            }
+
+            const handleChange = (value) => {
+                store.commit(`${props.resourceName}/updateFilterState`, {
+                    filterClass: props.filterKey,
                     value: value,
                 })
 
-                this.$emit('change')
-            },
-
-            optionValue(option) {
-                return option.label || option.name || option.value
-            },
-
-            async fetchOptions(filters) {
-                const lens = this.lens ? `/lens/${this.lens}` : ''
-                const {data: options} = await Nova.request().get(`/nova-api/${this.resourceName}${lens}/filters/options`, {
-                    params: {
-                        filters: btoa(JSON.stringify(filters)),
-                        filter: this.filterKey,
-                    },
-                })
-
-                this.options = options
-                this.loading = false
+                emit('change')
             }
-        },
 
-        computed: {
-            filter() {
-                return this.$store.getters[`${this.resourceName}/getFilter`](this.filterKey)
-            },
-
-            value() {
-                return this.filter.currentValue
-            },
-
-            availableOptions() {
-                let options = _.filter(this.options, option => {
-                    return !option.hasOwnProperty('depends') || _.every(option.depends, (values, filterName) => {
-                        const filter = this.$store.getters[`${this.resourceName}/getFilter`](filterName)
-                        if (!filter) return true
-                        return _.intersection(
-                            _.castArray(filter.currentValue).map(String),
-                            _.castArray(values).map(String)
+            const availableOptions = computed(() => {
+                let filteredOptions = filter(options.value, option => {
+                    return !option.hasOwnProperty('depends') || every(option.depends, (values, filterName) => {
+                        const filterObj = store.getters[`${props.resourceName}/getFilter`](filterName)
+                        if (!filterObj) return true
+                        return intersection(
+                            castArray(filterObj.currentValue).map(String),
+                            castArray(values).map(String)
                         ).length > 0;
                     })
                 })
-                if (!this.loading && this.value !== '' && options.filter(option => option.value == this.value).length === 0 ) {
-                    this.handleChange('')
+
+                if (!loading.value && value.value !== '' && filteredOptions.filter(option => option.value == value.value).length === 0) {
+                    handleChange('')
                 }
-                return options
-            },
-        },
+
+                return filteredOptions
+            })
+
+            const fetchOptions = async (filters) => {
+                const lens = props.lens ? `/lens/${props.lens}` : ''
+                try {
+                    const { data } = await Nova.request().get(`/nova-api/${props.resourceName}${lens}/filters/options`, {
+                        params: {
+                            filters: btoa(JSON.stringify(filters)),
+                            filter: props.filterKey,
+                        },
+                    })
+                    options.value = data
+                } catch (error) {
+                    console.error('Error fetching filter options:', error)
+                } finally {
+                    loading.value = false
+                }
+            }
+
+            // React to changes in dependent filters
+            watchEffect(() => {
+                const dependentFilters = filter.value.dependentOf.reduce((r, filterName) => {
+                    const f = store.getters[`${props.resourceName}/getFilter`](filterName)
+                    r[filterName] = f ? f.currentValue : ''
+                    return r
+                }, {})
+
+                loading.value = true
+                fetchOptions(dependentFilters)
+            })
+
+            onMounted(() => {
+                options.value = filter.value.options
+            })
+
+            return {
+                options,
+                loading,
+                filter,
+                value,
+                handleChange,
+                optionValue,
+                availableOptions,
+            }
+        }
     }
 </script>

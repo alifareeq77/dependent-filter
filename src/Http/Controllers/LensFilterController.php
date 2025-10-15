@@ -10,7 +10,7 @@ class LensFilterController
      * @param \Laravel\Nova\Http\Requests\LensRequest $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function options(LensRequest $request)
+    public function options(LensRequest $request): \Illuminate\Http\JsonResponse
     {
         $filter = $request->lens()->availableFilters($request)->first(function ($filter) use ($request) {
             return $filter->key() === $request->filter;

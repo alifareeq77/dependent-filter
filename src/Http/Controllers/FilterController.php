@@ -10,7 +10,7 @@ class FilterController
      * @param \Laravel\Nova\Http\Requests\NovaRequest $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function options(NovaRequest $request)
+    public function options(NovaRequest $request): \Illuminate\Http\JsonResponse
     {
         $filter = $request->newResource()->availableFilters($request)->first(function ($filter) use ($request) {
             return $filter->key() === $request->query('filter');
