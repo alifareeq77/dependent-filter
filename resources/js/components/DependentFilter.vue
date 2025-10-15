@@ -6,11 +6,11 @@
             <select-control
                     :dusk="`${filter.name}-filter-select`"
                     class="block w-full form-control-sm form-select"
-                    :value="value"
-                    @change="handleChange($event.target.value)"
+                    v-model="value"
+                    @change="handleChange"
                     :options="availableOptions"
-                    :label="optionValue"
-                    :selected="value"
+                    label="label"
+                    :reduce="option => option.value"
             >
                 <option value="" selected>&mdash;</option>
             </select-control>
@@ -46,16 +46,16 @@
             }
 
             const currentFilter = computed(() => getFilter())
-            const value = computed(() => currentFilter.value.currentValue)
+            
+            const value = computed({
+                get: () => currentFilter.value.currentValue,
+                set: (newValue) => handleChange(newValue)
+            })
 
-            const optionValue = (option) => {
-                return option.label || option.name || option.value
-            }
-
-            const handleChange = (value) => {
+            const handleChange = (newValue) => {
                 store.commit(`${props.resourceName}/updateFilterState`, {
                     filterClass: props.filterKey,
-                    value: value,
+                    value: newValue,
                 })
 
                 emit('change')
@@ -154,7 +154,6 @@
                 filter: currentFilter,
                 value,
                 handleChange,
-                optionValue,
                 availableOptions,
             }
         }
