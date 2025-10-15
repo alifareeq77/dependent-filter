@@ -19,7 +19,7 @@
 </template>
 
 <script>
-    import { ref, computed, watchEffect, onMounted } from 'vue'
+    import { ref, computed, watchEffect, onMounted, nextTick } from 'vue'
     import { useStore } from 'vuex'
     import { useDebouncedRef } from 'vue-composables'
     import { filter, every, intersection, castArray } from 'lodash'
@@ -63,22 +63,25 @@
             }
 
             const availableOptions = computed(() => {
-                let filteredOptions = filter(options.value, option => {
+                return filter(options.value, option => {
                     return !option.hasOwnProperty('depends') || every(option.depends, (values, filterName) => {
                         const filterObj = store.getters[`${props.resourceName}/getFilter`](filterName)
                         if (!filterObj) return true
                         return intersection(
                             castArray(filterObj.currentValue).map(String),
                             castArray(values).map(String)
-                        ).length > 0;
+                        ).length > 0
                     })
                 })
+            })
 
-                if (!loading.value && value.value !== '' && filteredOptions.filter(option => option.value == value.value).length === 0) {
-                    handleChange('')
+            // Ensure selected value remains valid given available options
+            watchEffect(() => {
+                const current = value.value
+                const opts = availableOptions.value
+                if (!loading.value && current !== '' && !opts.some(o => o.value == current)) {
+                    nextTick(() => handleChange(''))
                 }
-
-                return filteredOptions
             })
 
             const fetchOptions = async (filters) => {
