@@ -92,6 +92,7 @@
                             filter: props.filterKey,
                         },
                     })
+                  console.log(data)
                     options.value = data
                     
                     // Check if current value is still valid after fetching new options
