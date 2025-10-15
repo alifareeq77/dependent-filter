@@ -3,17 +3,22 @@
         <h3 class="text-sm uppercase tracking-wide text-80 bg-30 p-3">{{ filter.name }}</h3>
 
         <div class="p-2">
-            <select-control
+            <select
                     :dusk="`${filter.name}-filter-select`"
                     class="block w-full form-control-sm form-select"
-                    v-model="value"
-                    @change="handleChange"
-                    :options="availableOptions"
-                    label="label"
-                    :reduce="option => option.value"
+                    :value="value"
+                    @change="handleChange($event.target.value)"
             >
-                <option value="" selected>&mdash;</option>
-            </select-control>
+                <option value="">&mdash;</option>
+                <option 
+                    v-for="option in availableOptions" 
+                    :key="option.value"
+                    :value="option.value"
+                    :selected="option.value == value"
+                >
+                    {{ option.label || option.name || option.value }}
+                </option>
+            </select>
         </div>
     </div>
 </template>
@@ -46,16 +51,12 @@
             }
 
             const currentFilter = computed(() => getFilter())
-            
-            const value = computed({
-                get: () => currentFilter.value.currentValue,
-                set: (newValue) => handleChange(newValue)
-            })
+            const value = computed(() => currentFilter.value.currentValue)
 
-            const handleChange = (newValue) => {
+            const handleChange = (value) => {
                 store.commit(`${props.resourceName}/updateFilterState`, {
                     filterClass: props.filterKey,
-                    value: newValue,
+                    value: value,
                 })
 
                 emit('change')
