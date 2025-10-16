@@ -24,7 +24,7 @@
 </template>
 
 <script>
-    import { ref, computed, watch, onMounted } from 'vue'
+    import { ref, computed, watch, watchEffect, onMounted, nextTick } from 'vue'
     import { useStore } from 'vuex'
     import { filter as lodashFilter, every, intersection, castArray } from 'lodash'
 
@@ -43,6 +43,7 @@
 
         setup(props, { emit }) {
             const store = useStore()
+            const log = (...args) => console.log('[DependentFilter]', props.filterKey, ...args)
             const options = ref([])
             const loading = ref(false)
 
@@ -52,8 +53,14 @@
 
             const currentFilter = computed(() => getFilter())
             const value = computed(() => currentFilter.value.currentValue)
+            log('init', { resourceName: props.resourceName, lens: props.lens, filterKey: props.filterKey })
+
+            const optionValue = (option) => {
+                return option.label || option.name || option.value
+            }
 
             const handleChange = (value) => {
+                log('handleChange ->', value)
                 store.commit(`${props.resourceName}/updateFilterState`, {
                     filterClass: props.filterKey,
                     value: value,
@@ -63,92 +70,82 @@
             }
 
             const availableOptions = computed(() => {
-                return lodashFilter(options.value, option => {
-                    if (!option.hasOwnProperty('depends')) return true
-                    
-                    return every(option.depends, (values, filterName) => {
+                const filtered = lodashFilter(options.value, option => {
+                    return !option.hasOwnProperty('depends') || every(option.depends, (values, filterName) => {
                         const filterObj = store.getters[`${props.resourceName}/getFilter`](filterName)
                         if (!filterObj) return true
-                        
-                        const currentValue = filterObj.currentValue
-                        if (currentValue === '' || currentValue === null) return false
-                        
                         return intersection(
-                            castArray(currentValue).map(String),
+                            castArray(filterObj.currentValue).map(String),
                             castArray(values).map(String)
                         ).length > 0
                     })
                 })
+                log('availableOptions computed', { count: filtered.length, options: filtered })
+                return filtered
+            })
+
+            // Ensure selected value remains valid given available options
+            watchEffect(() => {
+                const current = value.value
+                const opts = availableOptions.value
+                if (!loading.value && current !== '' && !opts.some(o => o.value == current)) {
+                    log('resetting invalid selection', { current, optsCount: opts.length })
+                    nextTick(() => handleChange(''))
+                }
             })
 
             const fetchOptions = async (filters) => {
                 const lens = props.lens ? `/lens/${props.lens}` : ''
-                loading.value = true
-                
                 try {
+                    log('fetchOptions -> request', { resource: props.resourceName, lens: props.lens, filters })
                     const { data } = await Nova.request().get(`/nova-api/${props.resourceName}${lens}/filters/options`, {
                         params: {
                             filters: btoa(JSON.stringify(filters)),
                             filter: props.filterKey,
                         },
                     })
-                  console.log(data)
+                    log('fetchOptions <- response', data)
                     options.value = data
-                    
-                    // Check if current value is still valid after fetching new options
-                    const current = value.value
-                    if (current !== '' && !data.some(o => String(o.value) === String(current))) {
-                        handleChange('')
-                    }
                 } catch (error) {
-                    console.error('Error fetching filter options:', error)
-                    options.value = []
+                    console.error('[DependentFilter]', props.filterKey, 'Error fetching filter options:', error)
                 } finally {
                     loading.value = false
+                    log('fetchOptions done. loading =', loading.value)
                 }
             }
 
             // React to changes in dependent filters' values
             watch(
-                () => {
-                    const dependentFilters = currentFilter.value.dependentOf
-                    if (dependentFilters.length === 0) return []
-                    
-                    return dependentFilters.map((name) => {
-                        const f = store.getters[`${props.resourceName}/getFilter`](name)
-                        return f ? f.currentValue : ''
-                    })
-                },
+                () => currentFilter.value.dependentOf.map((name) => {
+                    const f = store.getters[`${props.resourceName}/getFilter`](name)
+                    return f ? f.currentValue : ''
+                }),
                 (values) => {
-                    const dependentFilters = currentFilter.value.dependentOf
-                    if (dependentFilters.length === 0) return
-                    
-                    const filters = dependentFilters.reduce((r, name, idx) => {
+                    log('dependent values changed', values)
+                    const dependentFilters = currentFilter.value.dependentOf.reduce((r, name, idx) => {
                         r[name] = values[idx]
                         return r
                     }, {})
 
-                    fetchOptions(filters)
-                }
+                    loading.value = true
+                    log('fetching with dependentFilters', dependentFilters)
+                    fetchOptions(dependentFilters)
+                },
+                { immediate: true }
             )
 
             onMounted(() => {
-                const current = currentFilter.value
-                
-                // For filters with dependencies, fetch options
-                if (current.dependentOf && current.dependentOf.length > 0) {
-                    const filters = current.dependentOf.reduce((r, name) => {
-                        const f = store.getters[`${props.resourceName}/getFilter`](name)
-                        r[name] = f ? f.currentValue : ''
-                        return r
-                    }, {})
-                    
-                    fetchOptions(filters)
-                } else {
-                    // For filters without dependencies, use the options from the filter object
-                    options.value = current.options || []
-                }
+                log('mounted; filter meta', {
+                    name: currentFilter.value.name,
+                    dependentOf: currentFilter.value.dependentOf,
+                    hideWhenEmpty: currentFilter.value.hideWhenEmpty,
+                })
+                options.value = currentFilter.value.options
+                log('initial options from server (if any)', options.value)
             })
+
+            watch(options, (val) => log('options updated', val))
+            watch(loading, (val) => log('loading =', val))
 
             return {
                 options,
@@ -156,6 +153,7 @@
                 filter: currentFilter,
                 value,
                 handleChange,
+                optionValue,
                 availableOptions,
             }
         }
